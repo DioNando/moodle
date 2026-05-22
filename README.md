@@ -1,48 +1,138 @@
-# Moodle
+# Plateforme Nationale de Formation des Enseignants
 
-<p align="center"><a href="https://moodle.org" target="_blank" title="Moodle Website">
-  <img src="https://raw.githubusercontent.com/moodle/moodle/main/.github/moodlelogo.svg" alt="The Moodle Logo">
-</a></p>
+> **Client :** Ministère / institution publique (Maroc)
+> **Prestataire :** RFC Digital
+> **Solution :** Moodle 4.5 LTS personnalisé
+> **Statut :** En cours de développement — V1
 
-[Moodle][1] is the World's Open Source Learning Platform, widely used around the world by countless universities, schools, companies, and all manner of organisations and individuals.
+Plateforme LMS institutionnelle pour la formation à grande échelle d'enseignants
+issus d'établissements privés marocains. Le système gère des parcours hybrides
+(présentiel + distanciel), un séquencement strict en 5 modules avec validation
+inter-modules, et un dispositif de certification avec jury.
 
-Moodle is designed to allow educators, administrators and learners to create personalised learning environments with a single robust, secure and integrated system.
+---
 
-## Documentation
+## Objectifs
 
-- Read our [User documentation][3]
-- Discover our [developer documentation][5]
-- Take a look at our [demo site][4]
+- Inscrire et gérer plusieurs milliers d'enseignants-stagiaires
+- Déployer des parcours hybrides (présentiel + distanciel)
+- Verrouiller la progression module par module (validation explicite par le
+  responsable pédagogique)
+- Offrir un feedback individualisé
+- Piloter la progression via des KPIs en temps réel
+- Exporter les données pédagogiques (Excel, PDF, CSV)
 
-## Community
+## Stack technique cible (production)
 
-[moodle.org][1] is the central hub for the Moodle Community, with spaces for educators, administrators and developers to meet and work together.
+| Composant | Version |
+|---|---|
+| OS | Ubuntu Server 22.04 LTS |
+| LMS | **Moodle 4.5 LTS** |
+| Web | Nginx 1.24+ |
+| PHP | 8.2-FPM |
+| BDD | MariaDB 10.11 LTS |
+| Cache | Redis 7.x |
+| Classes virtuelles | BigBlueButton 2.7+ (VM dédiée) |
+| SSL | Let's Encrypt |
 
-You may also be interested in:
+L'environnement de **preprod** tourne actuellement sur cPanel mutualisé
+(CloudLinux + CageFS, `ea-php83`, MariaDB 10.11.16, sans Redis).
 
-- attending a [Moodle Moot][6]
-- our regular series of [developer meetings][7]
-- the [Moodle User Association][8]
+## Architecture pédagogique
 
-## Installation and hosting
+```
+Module 1 ──[validation]──►
+Module 2 ──[validation]──►
+Module 3 ──[validation]──►
+Module 4 ──[validation]──►
+Module 5 (Synthèse + Jury) ──► Certification PDF
+```
 
-Moodle is Free, and Open Source software. You can easily [download Moodle][9] and run it on your own web server, however you may prefer to work with one of our experienced [Moodle Partners][10].
+Le module N+1 n'est accessible qu'après validation explicite du module N par
+le responsable pédagogique (champ profil `validation_module_N`, alimenté par
+un plugin custom `local_modulvalidation`).
 
-Moodle also offers hosting through both [MoodleCloud][11], and our [partner network][10].
+Chaque module est découpé en **Situations Professionnelles (SP)** combinant
+Page, Folder, URL/Vidéo, H5P, Forum, et une évaluation (Quiz ou Assignment).
 
-## License
+## Plugins requis
 
-Moodle is provided freely as open source software, under version 3 of the GNU General Public License. For more information on our license see
+BigBlueButtonBN, Attendance, Custom Certificate, H5P (natif), Configurable
+Reports, Completion Progress, Scheduler, Group Choice, Checklist, PoodLL
+(optionnel).
 
-[1]: https://moodle.org
-[2]: https://moodle.com
-[3]: https://docs.moodle.org/
-[4]: https://sandbox.moodledemo.net/
-[5]: https://moodledev.io
-[6]: https://moodle.com/events/mootglobal/
-[7]: https://moodledev.io/general/community/meetings
-[8]: https://moodleassociation.org/
-[9]: https://download.moodle.org
-[10]: https://moodle.com/partners
-[11]: https://moodle.com/cloud
-[12]: https://moodledev.io/general/license
+## Développement custom
+
+- **`local_modulvalidation`** — interface de validation inter-modules pour le
+  responsable pédagogique (formulaire, mise à jour champs profil,
+  notifications email)
+- **Thème** dérivé de Boost — charte client (logo, couleurs, accueil)
+- **8 rapports SQL** via Configurable Reports (KPI institutionnels)
+
+## Documentation projet
+
+Toute la documentation projet se trouve dans [`docs/`](./docs/) :
+
+| Fichier | Contenu |
+|---|---|
+| [`docs/RESUME_PROJET.md`](./docs/RESUME_PROJET.md) | Vue d'ensemble fonctionnelle, stack, sprints, livrables |
+| [`docs/MOODLE_SETUP.md`](./docs/MOODLE_SETUP.md) | Procédure d'installation et de configuration Moodle |
+| [`docs/PRODUCTION.md`](./docs/PRODUCTION.md) | Déploiement et exploitation en production |
+| [`docs/DOCKER_ENV.md`](./docs/DOCKER_ENV.md) | Environnement Docker (dev local) |
+| [`docs/suivi/`](./docs/suivi/) | Journaux de suivi datés (installation, incidents, décisions) |
+| `docs/Plateforme_Nationale_Formation_Enseignants_V2.pdf` | Spécification fonctionnelle client |
+| `docs/Plateforme_Enseignants_Document_Technique_Moodle.pdf` | Document technique de référence |
+
+## Planning — 13 semaines de développement
+
+| Sprint | Durée | Thème |
+|---|---|---|
+| Sprint 0 | 1 sem. | Préparation environnement (VMs, SSH, Git, backlog) |
+| Sprint 1 | 2 sem. | Installation Moodle + structure de base |
+| Sprint 2 | 2 sem. | Template SP + séquencement modules |
+| Sprint 3 | 2 sem. | Hybridation (BBB, H5P, présence) |
+| Sprint 4 | 2 sem. | Plugin validation + Module 5 |
+| Sprint 5 | 2 sem. | Reporting & certification |
+| Sprint 6 | 2 sem. | Recette, mise en production, formation |
+
+## État courant
+
+- ✅ Sprint 0 — environnement preprod provisionné, accès SSH, repo Git, clé SSH GitHub
+- ✅ Sprint 1 — Moodle 4.5.10 installé, login web fonctionnel (extension `sodium`
+  installée par l'hébergeur le 22/05/2026)
+- 🔜 Sprint 2 — template SP + verrouillage Module N+1
+
+Voir [`docs/suivi/`](./docs/suivi/) pour le détail des journaux d'installation
+et d'incidents.
+
+## Accès preprod (résumé)
+
+| Élément | Valeur |
+|---|---|
+| URL | http://lms-moodle.preprod.io/moodle/ |
+| Version | Moodle 4.5.10 |
+| PHP | 8.3 (ea-php83 + FPM) |
+| BDD | `lmsmoodle_moodle` (MariaDB 10.11.16) |
+| moodledata | `/home/lmsmoodle/moodledata` |
+
+Credentials admin et BDD : voir le coffre d'équipe — **jamais en clair dans
+le dépôt**.
+
+---
+
+## À propos de Moodle
+
+Ce dépôt embarque le code source de [Moodle](https://moodle.org), plateforme
+LMS open source distribuée sous **GNU GPL v3**. La documentation officielle
+Moodle reste disponible sur :
+
+- [docs.moodle.org](https://docs.moodle.org/) — documentation utilisateur
+- [moodledev.io](https://moodledev.io) — documentation développeur
+- [moodle.org](https://moodle.org) — communauté
+
+## Licence
+
+- Code Moodle : **GNU GPL v3** (voir `COPYING.txt`)
+- Développements custom (`local_modulvalidation`, thème, rapports SQL) :
+  GPL v3 compatible, propriété intellectuelle conforme au contrat
+  RFC Digital ↔ client.
