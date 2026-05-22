@@ -1,0 +1,407 @@
+<?php
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+namespace filter_poodll;
+
+defined('MOODLE_INTERNAL') || die();
+
+/**
+ *
+ * This is a class containing static functions for general PoodLL filter things
+ * like embedding recorders and managing them
+ *
+ * @package   filter_poodll
+ * @since      Moodle 2.7
+ * @copyright  2014 Justin Hunt
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+class filtertools {
+
+    const FILTER_POODLL_TEMPLATE_COUNT = 40;
+
+    public static function fetch_template_indexes($conf) {
+        if ($conf && array_key_exists('templatecount', $conf)) {
+            $templatecount = $conf['templatecount'];
+        } else {
+            $templatecount = self::FILTER_POODLL_TEMPLATE_COUNT;
+        }
+        $players = array();
+        for ($i = 1; $i <= $templatecount; $i++) {
+            $players[] = $i;
+        }
+        return $players;
+    }
+
+    public static function fetch_players_list($conf) {
+
+        //create player select list 
+
+        //playeroptions may be fewer than the number of templates, hence  we check if playername
+        //is default, and if we have a key to verify its a player or a blank template
+        $playeroptions = array();
+
+        if ($conf && property_exists($conf, 'templatecount')) {
+            $templatecount = $conf->templatecount;
+        } else {
+            $templatecount = self::FILTER_POODLL_TEMPLATE_COUNT;
+        }
+        for ($templateid = 1; $templateid <= $templatecount; $templateid++) {
+            //player name
+            $defplayername = 'Player: ';
+            $playername = $defplayername;
+            $playerkey = false;
+            if ($conf) {
+                if (!property_exists($conf, 'template_showplayers_' . $templateid) ||
+                        $conf->{'template_showplayers_' . $templateid} == 0) {
+                    continue;
+                }
+
+                if (property_exists($conf, 'templatename_' . $templateid)) {
+                    $playername = $conf->{'templatename_' . $templateid};
+                    $playerkey = $conf->{'templatekey_' . $templateid};
+                    $playername = trim($playername);
+                    if (empty($playername)) {
+                        $playername = $playerkey;
+                    }
+                }
+            }
+            //  a blank template will have no key, and maybe not a name
+            if ($playername == $defplayername) {
+                $playername .= $templateid;
+            }
+            if ($playerkey) {
+                $playeroptions[$playerkey] = $playername;
+            }
+        }
+        return $playeroptions;
+    }
+
+    /**
+     * Return an array of extensions we might handle
+     *
+     * @return array of variable names parsed from template string
+     */
+    public static function fetch_extensions($adminconfig = false) {
+        if (!$adminconfig) {
+            $adminconfig = get_config('filter_poodll');
+        }
+        $default_extensions = self::fetch_default_extensions();
+        $have_custom_extensions = $adminconfig && isset($adminconfig->extensions) && !empty($adminconfig->extensions);
+        if( $have_custom_extensions){
+            $custom_extensions= preg_replace("/[^A-Za-z0-9,]/", '', $adminconfig->extensions);
+            return explode(',',$custom_extensions);
+        }else{
+            return $default_extensions;
+        }
+    }
+
+    /**
+     * Return an array of extensions we might handle
+     *
+     * @return array of variable names parsed from template string
+     */
+    public static function fetch_default_extensions() {
+        return array('mp4', 'webm', 'ogg', 'ogv', 'flv', 'mp3', 'rss', 'youtube');
+    }
+
+    public static function fetch_emptyproparray() {
+        $proparray = array();
+        $proparray['AUTOID'] = '';
+        $proparray['CSSLINK'] = '';
+        return $proparray;
+    }
+
+    /**
+     * Return an array of variable names
+     *
+     * @param string template containing @@variable@@ variables
+     * @return array of variable names parsed from template string
+     */
+    public static function fetch_variables($template) {
+        $matches = array();
+        $t = preg_match_all('/@@(.*?)@@/s', $template, $matches);
+        if (count($matches) > 1) {
+            return ($matches[1]);
+        } else {
+            return array();
+        }
+    }
+
+    public static function fetch_filter_properties_fromurl($link, $ext, $is_webservice) {
+        global $PAGE;
+
+        $url = $link[1];
+        $url = str_replace('&amp;', '&', $url);
+        $rawurl = $url;
+        $url = clean_param($url, PARAM_URL);
+        $urlstub = substr($rawurl, 0, strpos($rawurl, '.' . $ext));
+        if ($ext == "youtube") {
+            $filename = $link[1];
+            $url = "https://www.youtube.com/watch?v=" . $filename;
+            $videourl = "https://www.youtube.com/watch?v=" . $filename;
+            $autojpgfilename = "hqdefault.jpg";
+            $autopngfilename = "hqdefault.png";
+            $autoposterurljpg = "http://img.youtube.com/vi/" . $filename . "/hqdefault.jpg";
+            $autoposterurlpng = "http://img.youtube.com/vi/" . $filename . "/hqdefault.png";
+            $filetitle = "";
+            $title = $filename;
+            $scheme = 'https:';
+        } else {
+            //get the bits of the url
+            $bits = parse_url($rawurl);
+            if (!array_key_exists('scheme', $bits)) {
+                //add scheme to url if there was none
+                $climode = defined('CLI_SCRIPT') && CLI_SCRIPT;
+                if (!$climode && strpos($PAGE->url->out(), 'https:') === 0) {
+                    $scheme = 'https:';
+                } else {
+                    $scheme = 'http:';
+                }
+            } else {
+                $scheme = $bits['scheme'] . ':';
+            }
+
+            $filename = basename($bits['path']);
+            $filetitle = str_replace('.' . $ext, '', $filename);
+            $autopngfilename = str_replace('.' . $ext, '.png', $filename);
+            $autojpgfilename = str_replace('.' . $ext, '.jpg', $filename);
+
+            $videourl = $rawurl;
+            $autoposterurljpg = $urlstub . '.jpg';
+            $autoposterurlpng = $urlstub . '.png';
+            $title = $link[4];
+        }
+
+        //init our prop array
+        $proparray = array();
+
+        //Add any params from url
+        if (!empty($link[3])) {
+            //drop the first char if it is ?, whch it probably is
+            $paramstring = ltrim($link[3], '?');
+            $paramstring = str_replace('&amp;', '&', $paramstring);
+            $params = array();
+            parse_str($paramstring, $params);
+            $proparray = array_merge($proparray, $params);
+        } else {
+            $paramstring = "";
+        }
+
+        //use default widths or explicit width/heights if they were passed in ie http://url.to.video.mp4?d=640x480
+        if (isset($proparray['d'])) {
+            $dimensions = explode('x', $proparray['d']);
+            if (count($dimensions) == 2) {
+                list($proparray['WIDTH'], $proparray['HEIGHT']) = $dimensions;
+            }
+        }
+
+        //make up mime type
+        switch ($ext) {
+            case 'mp3':
+                $automime = 'audio/mpeg';
+                break;
+            case 'webm':
+                $automime = 'video/webm';
+                break;
+            case 'ogg':
+                $automime = 'video/ogg';
+                break;
+            case 'mp4':
+            case 'youtube':
+            default:
+                $automime = 'video/mp4';
+        }
+
+        $proparray['AUTOMIME'] = $automime;
+        $proparray['URLSTUB'] = $urlstub;
+        $proparray['FILENAME'] = $filename;
+        $proparray['FILETITLE'] = $filetitle;
+        $proparray['AUTOPNGFILENAME'] = $autopngfilename;
+        $proparray['AUTOJPGFILENAME'] = $autojpgfilename;
+        $proparray['RAWVIDEOURL'] = !empty($paramstring) ? $videourl . '?' . $paramstring : $videourl;
+        $proparray['DATAATTRIBUTES'] = self::extract_data_attributes($link[0]);
+
+        if ($is_webservice) {
+            $proparray['VIDEOURL'] = $videourl;
+        } else {
+            $proparray['VIDEOURL'] = $videourl . '?cachekiller=' . rand(1, 9999) . time(); //add a time stamp to url
+        }
+        $proparray['RAWPARAMS'] = $paramstring;
+        $proparray['AUTOPOSTERURLJPG'] = $autoposterurljpg;
+        $proparray['AUTOPOSTERURLPNG'] = $autoposterurlpng;
+        $proparray['TITLE'] = $title;
+        $proparray['FILEEXT'] = $ext;
+        //hardcoding for now, later we will do something better
+        $proparray['AUDIOPLACEHOLDERDURATION'] = poodlltools::fetch_placeholder_duration('audio');
+        $proparray['VIDEOPLACEHOLDERDURATION'] = poodlltools::fetch_placeholder_duration('video');
+        return $proparray;
+    }//end of function
+
+    public static function extract_data_attributes($html_element) {
+      // Create a DOMDocument object from the HTML element string
+      $dom = new \DOMDocument();
+      // Wrap the HTML element string in a dummy div element
+      $html = '<div>' . $html_element . '</div>';
+      $dom->loadHTML($html);
+      $attributes_string="";
+
+      // Get the first (and only) element from the DOMDocument object
+      $element = $dom->getElementsByTagName('a')->item(0);
+
+
+      // Loop through each attribute of the element
+      foreach ($element->attributes as $attr) {
+        // Check if the attribute starts with "data-"
+        if (strpos($attr->name, 'data-') === 0) {
+          // If it does, add it to the data attributes array
+            $attributes_string .= " " . $attr->name .'="' . $attr->value .'"';
+        }
+    }
+
+    // Return the data attributes array
+    return $attributes_string;
+}
+
+
+public static function fetch_filter_properties($filterstring) {
+        //lets do a general clean of all input here
+        //see: https://github.com/justinhunt/moodle-filter_generico/issues/7
+        $filterstring = clean_param($filterstring, PARAM_TEXT);
+
+        //this just removes the {POODLL: .. } 
+        $rawproperties = explode("{POODLL:", $filterstring);
+        $rawproperties = $rawproperties[1];
+        $rawproperties = explode("}", $rawproperties);
+
+        //here we remove any html tags we find. They should not be in here
+        //and we return the guts of the filter string for parsing
+        $rawproperties = strip_tags($rawproperties[0]);
+
+        //Now we just have our properties string
+        //Lets run our regular expression over them
+        //string should be property=value,property=value
+        //got this regexp from http://stackoverflow.com/questions/168171/regular-expression-for-parsing-name-value-pairs
+        $regexpression = '/([^=,]*)=("[^"]*"|[^,"]*)/';
+        $matches = array();
+
+        //here we match the filter string and split into name array (matches[1]) and value array (matches[2])
+        //we then add those to a name value array.
+        $itemprops = array();
+        if (preg_match_all($regexpression, $rawproperties, $matches, PREG_PATTERN_ORDER)) {
+            $propscount = count($matches[1]);
+            for ($cnt = 0; $cnt < $propscount; $cnt++) {
+                //echo $matches[1][$cnt] . "=" . $matches[2][$cnt] . " <br/>";
+                $newvalue = $matches[2][$cnt];
+                //this could be done better, I am sure. WE are removing the quotes from start and end
+                //this wil however remove multiple quotes id they exisst at start and end. NG really
+                $newvalue = trim($newvalue, '"');
+
+                //remove any @@ characters from the new value - that would be some sort of variable injection
+                $newvalue = str_replace('@@', '', $newvalue);
+
+                // Prepare the new key.
+                $newkey = trim($matches[1][$cnt]);
+
+                // Remove any attempts to overwrite simple system values via the key.
+                $systemvars = array('AUTOID', 'WWWROOT', 'MOODLEPAGEID','FILENAME','AUTOJPGFILENAME',
+                    'AUTOPNGFILENAME', 'AUTOPOSTERURLJPG', 'AUTOPOSTERURLPNG','AUTOMIME','FILEEXT','VIDEOURL',
+                    'URLSTUB');
+                if(in_array($newkey, $systemvars)) {
+                    continue;
+                }
+                // Remove any attempts to overwrite system values that are sets of data.
+                $systemvars_partial = array('URLPARAM:', 'COURSE:','USER:','DATASET:');
+                foreach ($systemvars_partial as $systemvar) {
+                    if (stripos($newkey, $systemvar) === 0) {
+                        $newkey = '';
+                        break;
+                    }
+                }
+                if(empty($newkey)) {
+                    continue;
+                }
+
+                $itemprops[$newkey] = $newvalue;
+            }
+        }
+        return $itemprops;
+    }//end of function
+
+    /*
+     * $filter = 'poodll'
+     *
+     */
+    public static function fetch_local_filter_props($filter, $contextid) {
+        global $CFG;
+        require_once($CFG->libdir . '/filterlib.php');
+        $props = filter_get_local_config($filter, $contextid);
+        return $props;
+    }
+
+    /*
+     *
+     */
+    public static function add_nomediaplugin_class_to_playerwidgets($html) {
+        // Create a new DOMDocument object
+        $doc = new \DOMDocument();
+
+        // Load the HTML string into the DOMDocument
+        $doc->loadHTML('<?xml version="1.0" encoding="UTF-8"?>' . $html, LIBXML_HTML_NODEFDTD | LIBXML_NOERROR | LIBXML_NOWARNING);
+
+        $finder = new \DomXPath($doc);
+        $classname="poodllplayerwidgetnoshow";
+        $nodes = $finder->query("//div[contains(@class, '$classname')]");
+        if(!$nodes || $nodes->length == 0) {
+            // If the div with id "poodllplayerwidgetnoshow" is not found, return the original HTML string
+            return $html;
+        }else{
+            foreach ($nodes as $poodll_player_div) {
+                // Get all HTML5 audio and video elements
+                $audio_players = $poodll_player_div->getElementsByTagName('audio');
+                $video_players = $poodll_player_div->getElementsByTagName('video');
+
+                // Get all links with an MP3 or MP4 file extension
+                $links = $poodll_player_div->getElementsByTagName('a');
+                $media_links= array();
+                foreach ($links as $link) {
+                    $url = $link->getAttribute('href');
+                    if (preg_match('/\.(mp3|mp4)$/i', $url)) {
+                        $media_links[]= $link;
+                    }
+                }
+
+                // Loop through each media player element and add the CSS class
+                $playerslist=[$audio_players,$video_players,$media_links];
+                foreach($playerslist as $media_players){
+                    foreach ($media_players as $player) {
+                        $class = $player->getAttribute('class');
+                        if (empty($class)) {
+                            $player->setAttribute('class', 'nomediaplugin nopoodll');
+                        } else {
+                            $player->setAttribute('class', $class . ' nomediaplugin nopoodll');
+                        }
+
+                    }
+                }
+
+
+            }//end of for each
+            // Save the updated HTML to a string and return it
+            $updated_html = $doc->saveHTML(); //$doc->saveHTML($poodll_player_div);
+            return $updated_html;
+        }//end of if nodes
+    }//end of function
+}//end of class
